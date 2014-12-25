@@ -1,0 +1,52 @@
+#rules-filter-wrapper {
+  overflow: hidden;
+  border: 1px solid #ccc;
+}
+
+/* Tabs styles */
+#rules-filter-tabs {
+  width: 20%;
+  float: left;
+}
+#rules-filter-tabs ul {
+  margin: 0;
+}
+#rules-filter-tabs ul li {
+  display: block;
+  border-bottom: 1px solid #ccc;
+}
+#rules-filter-tabs ul li:nth-child(2):after {
+  content: '';
+  width: 100%;
+  height: 10px;
+  display: block;
+  border-top: 1px solid #ccc;
+  background-color: #ddd;
+}
+#rules-filter-tabs ul li a {
+  padding: 10px;
+  display: block;
+  background-color: #eee;
+  color: #666;
+}
+#rules-filter-tabs ul li a.selected,
+#rules-filter-tabs ul li a.selected:hover {
+  background-color: #fff;
+  color: #000;
+}
+#rules-filter-tabs ul li a:hover {
+  background: #d5d5d5;
+  text-decoration: none;
+}
+
+/* Rules table */
+#rules-filter-rules {
+  width: 79%;
+  float: left;
+}
+
+/* Filter form */
+#rules-filter-rules .rules-filter-form .form-item {
+  margin-left: 10px;
+  display: inline-block;
+}

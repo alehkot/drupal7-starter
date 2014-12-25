@@ -1,0 +1,13 @@
+<?php
+/**
+ * @file
+ * Installation file for the FPP Bundles module.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function fpp_bundles_schema() {
+  require_once 'classes/FppBundlesDatabase.inc';
+  return \FppBundlesDatabase::instance('fpp_bundles')->getSchema();
+}

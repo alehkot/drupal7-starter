@@ -1,0 +1,13 @@
+name = Rules filter
+description = Filter the rules list.
+core = 7.x
+package = Rules
+dependencies[] = rules
+dependencies[] = rules_admin
+
+; Information added by Drupal.org packaging script on 2014-12-09
+version = "7.x-1.0-beta3"
+core = "7.x"
+project = "rules_filter"
+datestamp = "1418115781"
+
