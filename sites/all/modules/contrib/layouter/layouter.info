@@ -6,9 +6,9 @@ configure = admin/config/content/layouter
 dependencies[] = ctools_automodal
 dependencies[] = filter
 dependencies[] = image
-; Information added by Drupal.org packaging script on 2014-11-21
-version = "7.x-1.4"
+; Information added by Drupal.org packaging script on 2015-01-11
+version = "7.x-1.6"
 core = "7.x"
 project = "layouter"
-datestamp = "1416568734"
+datestamp = "1420954381"
 

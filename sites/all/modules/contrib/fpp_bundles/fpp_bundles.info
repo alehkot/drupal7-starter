@@ -1,4 +1,4 @@
-name = Fieldable Panels Panes Bundles
+name = FPP Bundles (Fieldable Panels Panes UI)
 description = Create your own "Fieldable Panels Pane" entity from admin interface, add fields on it and export it all with "Features".
 package = Panels
 core = 7.x
@@ -19,4 +19,11 @@ version = "7.x-1.2"
 core = "7.x"
 project = "fpp_bundles"
 datestamp = "1419451981"
+
+
+; Information added by Drupal.org packaging script on 2015-01-29
+version = "7.x-1.3"
+core = "7.x"
+project = "fpp_bundles"
+datestamp = "1422502084"
 

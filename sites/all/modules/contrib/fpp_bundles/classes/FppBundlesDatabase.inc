@@ -68,6 +68,10 @@ class FppBundlesDatabase {
       'length' => 100,
       'not null' => TRUE,
     );
+    $not_null_int = array(
+      'type' => 'int',
+      'not null' => TRUE,
+    );
 
     $indexes = array(
       // Primary key - auto increment.
@@ -90,14 +94,16 @@ class FppBundlesDatabase {
       ),
       // Checkbox in UI. Needed for the indicated where entity
       // will be shown: in category or in general list.
-      'level' => array(
-        'type' => 'int',
-        'not null' => TRUE,
+      'level' => $not_null_int + array(
         'description' => 'Indicates that the panel is "top level" or placed into category.',
       ),
       // Input in UI.
       'category' => $not_null_varchar + array(
         'description' => 'Optional field for store bundles in categories.',
+      ),
+      'assets' => $not_null_int + array(
+        'default' => 1,
+        'description' => 'Boolean. Indicates the state of automatically load the CSS & JS files.',
       ),
     );
 
@@ -130,8 +136,8 @@ class FppBundlesDatabase {
    * @param int|string $value
    *   An ID of the bundle.
    *
-   * @return bool|array
-   *   False - if nothing was found or an array with info about bundle.
+   * @return bool|\FppBundle
+   *   False - if nothing was found or existing bundle object.
    */
   public function getBundleByDbIndex($index_name, $value) {
     if (!isset($this->indexes[$index_name])) {
@@ -226,7 +232,7 @@ class FppBundlesDatabase {
    * Save values for the bundle and create it.
    *
    * @param array $bundle
-   *   Bundle object.
+   *   Bundle data.
    *
    * @return int
    *   Last insert ID.
@@ -278,13 +284,18 @@ class FppBundlesDatabase {
    *   or ID of a new entry on "insert" action.
    */
   public function performAction($action, array $bundle) {
-    $action = "db_$action";
+    $fpp_bundle = FALSE;
+    $func = "db_$action";
 
-    if (!function_exists($action)) {
-      throw \FppBundlesException::set('Incorrect action over the bundle!');
+    if (!function_exists($func)) {
+      \FppBundlesException::set(t('Action "!action" that was performed over the bundle is incorrect!', array(
+        '!action' => $action,
+      )));
+
+      return 0;
     }
 
-    $query = call_user_func($action, $this->table);
+    $query = call_user_func($func, $this->table);
     $index = $this->indexes['primary'];
     $bundle_id = 0;
 
@@ -293,7 +304,10 @@ class FppBundlesDatabase {
       unset($bundle[$index]);
     }
 
-    if (!($query instanceof \DeleteQuery)) {
+    if ($query instanceof \DeleteQuery) {
+      $fpp_bundle = $this->getBundleByDbIndex('primary', $bundle_id);
+    }
+    else {
       /* @var \UpdateQuery|\InsertQuery $query */
       $query->fields($bundle);
     }
@@ -303,7 +317,19 @@ class FppBundlesDatabase {
       $query->condition($index, $bundle_id, '=');
     }
 
-    return $query->execute();
+    $query = $query->execute();
+
+    if (!$fpp_bundle) {
+      // The "$bundle_id" will be more than zero for "delete" and "update"
+      // actions, and for "insert" the ID will be returned by "execute" method.
+      $bundle['bid'] = $bundle_id ?: $query;
+      $fpp_bundle = new \FppBundle();
+      $fpp_bundle = $fpp_bundle->import($bundle);
+    }
+
+    module_invoke_all(_fpp_bundles_prefix("bundle_$action"), $fpp_bundle);
+
+    return $query;
   }
 
   /**
@@ -327,13 +353,154 @@ class FppBundlesDatabase {
         $save[$field] = $data[$field];
       }
       elseif ($field !== $this->indexes['primary']) {
-        throw \FppBundlesException::set('The property "!property" is not specified or does not exist, but it is necessary to create the bundle.', array(
+        throw \FppBundlesException::set(t('The property "!property" is not specified or does not exist, but it is necessary to create the bundle.', array(
           '!property' => $field,
-        ));
+        )));
       }
     }
 
     return $save;
+  }
+
+  /**
+   * Validate the bundle before saving into DB.
+   *
+   * @param array $values
+   *   The values for creating/updating the bundle.
+   *
+   * @throws \FppBundlesException
+   *   When error is occured.
+   *
+   * @return array
+   *   An associative array with two items: "action" and "values".
+   */
+  public function validateBundle(array $values) {
+    $action = FALSE;
+    $error = FALSE;
+
+    if (empty($values['name'])) {
+      $error = t('The name of bundle - required parameter.');
+    }
+    else {
+      // Validate the text fields.
+      foreach (array('name', 'category') as $field_name) {
+        if (isset($values[$field_name])) {
+          $values[$field_name] = trim(filter_xss($values[$field_name]));
+
+          if (empty($values[$field_name])) {
+            $error = t('The !field of bundle should not be empty and can contain only latin letters.', array(
+              '!field' => $field_name,
+            ));
+          }
+          elseif (!strlen(preg_replace('/\d+|\s+/', '', $values[$field_name]))) {
+            $error = t('The !field of bundle should not contain only numbers.', array(
+              '!field' => $field_name,
+            ));
+          }
+          elseif (strlen($values[$field_name]) < FPP_BUNDLES_MINIMUM_CHARS_FOR_NAME) {
+            $error = t('The !field of bundle should contain more than !number symbols.', array(
+              '!number' => FPP_BUNDLES_MINIMUM_CHARS_FOR_NAME,
+              '!field' => $field_name,
+            ));
+          }
+        }
+      }
+
+      // If "bid" does not exist, then we try to create a new bundle.
+      if (empty($values[$this->indexes['primary']])) {
+        $values[$this->indexes['unique']] = _fpp_bundles_create_machine_name($values['name']);
+
+        if ($this->getBundleByDbIndex('unique', $values[$this->indexes['unique']])) {
+          $error = t('The bundle with "!machine" machine name is already exist.', array(
+            '!machine' => $values[$this->indexes['unique']],
+          ));
+        }
+        else {
+          $action = FPP_BUNDLES_CREATE_BUNDLE_ACTION;
+
+          $empty = new \FppBundle();
+          $values += $empty->getAllFieldsAsArray();
+        }
+      }
+      else {
+        $existing = $this->getBundleByDbIndex('primary', $values[$this->indexes['primary']]);
+
+        if ($existing) {
+          $action = FPP_BUNDLES_UPDATE_BUNDLE_ACTION;
+          $values[$this->indexes['unique']] = $existing->getMachineName();
+          $values += $existing->getAllFieldsAsArray();
+        }
+        else {
+          $error = t('The bundle with ID "!id" was not created and cannot to be updated.', array(
+            '!id' => $values[$this->indexes['primary']],
+          ));
+        }
+      }
+
+      foreach (array('level', 'assets') as $field_name) {
+        if (isset($values[$field_name])) {
+          $values[$field_name] = (int) $values[$field_name];
+        }
+      }
+    }
+
+    if ($error) {
+      throw \FppBundlesException::set($error);
+    }
+
+    return array(
+      'values' => $this->prepareBundleData($values),
+      'action' => $action,
+    );
+  }
+
+  /**
+   * Create or update a bundle programmatically.
+   *
+   * @param array $bundle
+   *   The values for creating or updating the bundle. If "bid" was not
+   *   specified, then bundle will be created. To read about array keys,
+   *   see the properties of \FppBundle object.
+   *
+   * @see \FppBundle
+   *
+   * @return bool
+   *   TRUE - if bundle was created/updated, FALSE and watchdog message if not.
+   */
+  public function saveBundle(array $bundle) {
+    try {
+      $bundle = $this->validateBundle($bundle);
+    }
+    catch (\FppBundlesException $e) {
+      return FALSE;
+    }
+
+    $this->performAction($bundle['action'], $bundle['values']);
+
+    return TRUE;
+  }
+
+  /**
+   * Remove bundle programmatically.
+   *
+   * @param int $bid
+   *   The bundle ID.
+   *
+   * @return bool
+   *   TRUE - if a bundle was removed, FALSE and watchdog message if not.
+   */
+  public function removeBundle($bid) {
+    if ($this->getBundleByDbIndex('primary', $bid)) {
+      $this->deleteBundle(array($this->indexes['primary'] => $bid));
+
+      return TRUE;
+    }
+
+    \FppBundlesException::set(t('Trying to remove the bundle with ID "!id" that does not exist.', array(
+      '!id' => $bid,
+    )));
+
+    return FALSE;
   }
 
   /**

@@ -12,15 +12,12 @@ class FppBundlesException extends \Exception {
    * Throw Drupal error and store it to "Recent log messages".
    *
    * @param string $message
-   *   Text message with placeholders.
-   * @param array $args
-   *   An array of arguments for replacing the placeholders.
+   *   Exception message.
    *
    * @return self
    *   Exception, which can be thrown.
    */
-  public static function set($message, array $args = array()) {
-    $message = format_string($message, $args);
+  public static function set($message) {
     $exception = new self($message);
 
     watchdog_exception('FPP Bundles', $exception, $message);

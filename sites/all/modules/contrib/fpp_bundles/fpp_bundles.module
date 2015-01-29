@@ -40,6 +40,25 @@ define('FPP_BUNDLES_UPDATE_BUNDLE_ACTION', 'update');
 define('FPP_BUNDLES_REMOVE_BUNDLE_ACTION', 'delete');
 
 /**
+ * Implements hook_fpp_bundles_bundle_update().
+ */
+function fpp_bundles_fpp_bundles_bundle_insert(\FppBundle $bundle) {
+  $_SESSION['test']['insert'] = $bundle;
+}
+/**
+ * Implements hook_fpp_bundles_bundle_update().
+ */
+function fpp_bundles_fpp_bundles_bundle_update(\FppBundle $bundle) {
+  $_SESSION['test']['update'] = $bundle;
+}
+/**
+ * Implements hook_fpp_bundles_bundle_update().
+ */
+function fpp_bundles_fpp_bundles_bundle_delete(\FppBundle $bundle) {
+  $_SESSION['test']['delete'] = $bundle;
+}
+
+/**
  * Main controller of the module.
  *
  * @param string $option_name
@@ -117,6 +136,55 @@ function fpp_bundles_db() {
 }
 
 /**
+ * Create or update a bundle programmatically.
+ *
+ * @see \FppBundlesDatabase::saveBundle()
+ */
+function fpp_bundles_save(array $values) {
+  return fpp_bundles_db()->saveBundle($values);
+}
+
+/**
+ * Remove bundle programmatically.
+ *
+ * @see \FppBundlesDatabase::removeBundle()
+ */
+function fpp_bundles_remove($bid) {
+  return fpp_bundles_db()->removeBundle($bid);
+}
+
+/**
+ * Implements hook_help().
+ */
+function fpp_bundles_help($path, $arg) {
+  $output = '';
+
+  switch ($path) {
+    case 'admin/help#' . FPP_BUNDLES_MACHINE_NAME:
+      return theme(_fpp_bundles_prefix('_admin_help'), func_get_args());
+  }
+
+  return $output;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function fpp_bundles_theme($existing, $type, $theme, $path) {
+  $suggestions = array();
+
+  foreach (array('_admin_help') as $suggestion) {
+    $suggestion = _fpp_bundles_prefix($suggestion);
+    $suggestions[$suggestion] = array(
+      'template' => str_replace('_', '-', $suggestion),
+      'path' => "$path/templates",
+    );
+  }
+
+  return $suggestions;
+}
+
+/**
  * Create the module route.
  *
  * @return array
@@ -161,6 +229,52 @@ function fpp_bundles_entity_info_alter(&$entity_info) {
         'access arguments' => array(FPP_BUNDLES_ENTITY_ACCESS),
       ),
     );
+  }
+}
+
+/**
+ * Implements hook_entity_load().
+ */
+function fpp_bundles_entity_load(array $entities, $type) {
+  static $data = array();
+
+  if ($type == FPP_BUNDLES_ENTITY_TYPE) {
+    // Preventing a many-times functions calls.
+    if (!$data) {
+      $data['db'] = fpp_bundles_db();
+      $data['theme_path'] = path_to_theme();
+    }
+
+    foreach ($entities as $entity) {
+      $bundle = $data['db']->getBundleByDbIndex('unique', $entity->bundle);
+
+      if ($bundle) {
+        $entity->assets = array();
+
+        if ($bundle->isAssetsLoadAutomatically()) {
+          foreach (array('css', 'js') as $extension) {
+            $file = str_replace('_', '-', "{$data['theme_path']}/$extension/{$type}s/$entity->bundle.$extension");
+
+            if (file_exists(DRUPAL_ROOT . "/$file")) {
+              $entity->assets[$extension] = $file;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_fieldable_panels_pane_view().
+ */
+function fpp_bundles_fieldable_panels_pane_view($entity, $view_mode, $langcode) {
+  // "assets" property is provided by this module and set only for entities,
+  // that has been created from UI.
+  if (isset($entity->assets)) {
+    foreach ($entity->assets as $type => $file) {
+      call_user_func("drupal_add_$type", $file);
+    }
   }
 }
 
@@ -360,14 +474,23 @@ function _fpp_bundles_clear_caches() {
 /**
  * Create function name that prefixed by module name.
  *
- * @param string $suffix
- *   Callback suffix.
- *
- * @return string
- *   Callback name.
+ * @see _fpp_bundles_prefix()
  */
 function _fpp_bundles_callback_prefix($suffix) {
-  return '_' . FPP_BUNDLES_MACHINE_NAME . "_$suffix";
+  return '_' . _fpp_bundles_prefix($suffix);
+}
+
+/**
+ * Prepend module name into a string.
+ *
+ * @param string $suffix
+ *   Ending of a string.
+ *
+ * @return string
+ *   Prefixed string.
+ */
+function _fpp_bundles_prefix($suffix) {
+  return FPP_BUNDLES_MACHINE_NAME . "_$suffix";
 }
 
 /**
@@ -421,4 +544,24 @@ function _fpp_bundles_get_action_success_message_by_name($action, $bundle_name) 
   }
 
   return $status;
+}
+
+/**
+ * Transform a any string to machine name.
+ *
+ * @param string $string
+ *   Input string for transformations.
+ *
+ * @example
+ *   String: "__-_   An awe-some manager!#$%^&_+123=-ÆæØä'Ö\"@ (bundle)"
+ *   Will be transformed to: "an_awe_some_manager123_bundle".
+ *
+ * @return string
+ *   Generated name.
+ */
+function _fpp_bundles_create_machine_name($string) {
+  // Firstly, set to lowercase the input string. Secondly, leave in a
+  // row only lowercase latin characters, numbers, and single spaces,
+  // but only between the words. Thirdly, replace spaces to underscores.
+  return trim(preg_replace('/\s+|-+/', '_', trim(preg_replace('/[^a-z\d\s-]/', '', strtolower($string)))), '_');
 }

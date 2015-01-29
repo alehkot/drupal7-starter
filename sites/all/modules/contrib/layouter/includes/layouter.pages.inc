@@ -8,7 +8,7 @@
 function layouter_choose_layout($textarea_id = NULL, $step = NULL) {
   ctools_include('modal');
   ctools_include('ajax');
-  require_once ('layouter.inc');
+  require_once 'layouter.inc';
   $form_info = array(
     'id' => 'layouter',
     'path' => 'layouter/' . $textarea_id . '/%step',
@@ -17,24 +17,25 @@ function layouter_choose_layout($textarea_id = NULL, $step = NULL) {
     'show cancel' => TRUE,
     'show return' => FALSE,
     'next text' => t('Next'),
-    'next callback' =>  'layouter_wizard_next',
+    'next callback' => 'layouter_wizard_next',
     'finish callback' => 'layouter_wizard_finish',
     'cancel callback' => 'layouter_wizard_cancel',
-    // this controls order, as well as form labels
+    // This controls order, as well as form labels.
     'order' => array(
-      'start' => t('Choose layout template')
+      'start' => t('Choose layout template'),
     ),
-    // here we map a step to a form id.
+    // Here we map a step to a form id.
     'forms' => array(
-      // e.g. this for the step at wombat/create
+      // E.g. this for the step at wombat/create.
       'start' => array(
-        'form id' => 'layouter_choose_layout_form'
-      )
-    )
+        'form id' => 'layouter_choose_layout_form',
+      ),
+    ),
   );
   $object_id = 1;
   if (empty($step)) {
-    // We reset the form when $step is NULL because that means they have for whatever reason started over.
+    // We reset the form when $step is NULL
+    // because that means they have for whatever reason started over.
     layouter_cache_clear($object_id);
     $step = 'start';
   }
@@ -52,15 +53,17 @@ function layouter_choose_layout($textarea_id = NULL, $step = NULL) {
     $form_info['forms']['unknown'] = array('form id' => 'nothing');
   }
   else {
-  // Add the selected template to the order so that it shows up properly in the trail.
+    // Add the selected template to the order so that it shows up properly in
+    // the trail.
     $form_info['order'][$object->type] = $templates[$object->type]['config title'];
   }
-  // Make sure all templates forms are represented so that the next stuff can work correctly.
+  // Make sure all templates forms are represented so that the next stuff can
+  // work correctly.
   foreach ($templates as $id => $template) {
     $form_info['forms'][$id] = array(
       'form id' => $templates[$id]['form'],
       'form title' => t('Layout content'),
-      'theme' => $template['theme']
+      'theme' => $template['theme'],
     );
   }
   $form_state = array(
@@ -69,7 +72,7 @@ function layouter_choose_layout($textarea_id = NULL, $step = NULL) {
     'object_id' => $object_id,
     'object' => &$object,
     'form_info' => $form_info,
-    'textarea_id' => $textarea_id
+    'textarea_id' => $textarea_id,
   );
   // Send this all off to our form. This is like drupal_get_form.
   ctools_include('wizard');
@@ -77,7 +80,8 @@ function layouter_choose_layout($textarea_id = NULL, $step = NULL) {
   $form['buttons']['cancel']['#attributes']['class'][] = 'layouter-close';
   $output = drupal_render($form);
   if ($output === FALSE || !empty($form_state['complete'])) {
-    // This creates a string based upon the template and its setting using function indirection.
+    // This creates a string based upon the template and its setting using
+    // function indirection.
     $template = $templates[$object->type]['output']($object);
   }
   $commands = array();
@@ -92,6 +96,9 @@ function layouter_choose_layout($textarea_id = NULL, $step = NULL) {
   exit;
 }
 
+/**
+ * Returns form for choose a template.
+ */
 function layouter_choose_layout_form($form, &$form_state) {
   $form_state['title'] = t('Layouter');
   $templates = layouter_templates();
@@ -105,7 +112,7 @@ function layouter_choose_layout_form($form, &$form_state) {
     '#options' => $options,
     '#default_value' => $form_state['object']->type,
     '#required' => 1,
-    '#after_build' => array('_layouter_process_layout_type_radios')
+    '#after_build' => array('_layouter_process_layout_type_radios'),
   );
   $form['#attributes']['class'][] = 'layouter-form';
   $module_path = drupal_get_path('module', 'layouter');
@@ -118,6 +125,9 @@ function layouter_choose_layout_form($form, &$form_state) {
   return $form;
 }
 
+/**
+ * Moves to the form of selected template.
+ */
 function layouter_choose_layout_form_submit($form, &$form_state) {
   $form_state['object']->type = $form_state['values']['type'];
   // Override where to go next based on the template selected.
@@ -125,7 +135,7 @@ function layouter_choose_layout_form_submit($form, &$form_state) {
 }
 
 /**
- * Form for adding content for img_only layout.
+ * Returns Form for adding content for img_only layout.
  */
 function layouter_img_only_form($form, &$form_state) {
   $form_state['title'] = $form_state['form_info']['forms'][$form_state['step']]['form title'];
@@ -134,15 +144,17 @@ function layouter_img_only_form($form, &$form_state) {
   return $form;
 }
 
+/**
+ * Proccess Layouter Form with img_only.
+ */
 function layouter_img_only_form_submit($form, &$form_state) {
   $values = $form_state['values'];
   $image_fid = $values['image'];
   $image_style = $values['image_style'];
-  
   $image_file = file_load($image_fid);
   $image_file->status = FILE_STATUS_PERMANENT;
   file_save($image_file);
-  $style_theme = ($image_style=='layouter_none') ? 'image' : 'image_style';
+  $style_theme = ($image_style == 'layouter_none') ? 'image' : 'image_style';
   $image = theme($style_theme, array('style_name' => $image_style, 'path' => $image_file->uri));
   $textarea_id = $form_state['textarea_id'];
   // Apply the layout to the content.
@@ -152,7 +164,7 @@ function layouter_img_only_form_submit($form, &$form_state) {
 }
 
 /**
- * Form for adding content for two_columns layout.
+ * Returns Form for adding content for two_columns layout.
  */
 function layouter_two_columns_form($form, &$form_state) {
   $form_state['title'] = $form_state['form_info']['forms'][$form_state['step']]['form title'];
@@ -160,6 +172,9 @@ function layouter_two_columns_form($form, &$form_state) {
   return $form;
 }
 
+/**
+ * Proccess Layouter Form with two_columns.
+ */
 function layouter_two_columns_form_submit($form, &$form_state) {
   $values = $form_state['values'];
   $text_content = strip_tags($values['text_content']);
@@ -171,7 +186,7 @@ function layouter_two_columns_form_submit($form, &$form_state) {
 }
 
 /**
- * Form for adding content for two_columns_img_left_text_right layout.
+ * Returns Form for adding content for two_columns_img_left_text_right layout.
  */
 function layouter_img_caption_text_form($form, &$form_state) {
   $form_state['title'] = $form_state['form_info']['forms'][$form_state['step']]['form title'];
@@ -185,11 +200,14 @@ function layouter_img_caption_text_form($form, &$form_state) {
   $form['image_content']['image_style'] = layouter_image_style();
   $form['image_content']['caption'] = array(
     '#type' => 'textarea',
-    '#title' => t('Caption')
+    '#title' => t('Caption'),
   );
   return $form;
 }
 
+/**
+ * Proccess Layouter Form with two_columns_img_left_text_right.
+ */
 function layouter_img_caption_text_form_submit($form, &$form_state) {
   $values = $form_state['values'];
   $text_content = strip_tags($values['text_content']);
@@ -199,19 +217,25 @@ function layouter_img_caption_text_form_submit($form, &$form_state) {
   $image_file = file_load($image_fid);
   $image_file->status = FILE_STATUS_PERMANENT;
   file_save($image_file);
-  $style_theme = ($image_style=='layouter_none') ? 'image' : 'image_style';
+  $style_theme = ($image_style == 'layouter_none') ? 'image' : 'image_style';
   $image = theme($style_theme, array('style_name' => $image_style, 'path' => $image_file->uri));
   $textarea_id = $form_state['textarea_id'];
-  // As we use the same form for different layouts we need to know which template to apply.
+  // As we use the same form for different layouts we need to know which
+  // template to apply.
   $theme = $form_state['form_info']['forms'][$form_state['step']]['theme'];
   // Apply the layout to the content.
-  $content = theme($theme, array('text' => $text_content, 'image' => $image, 'caption' => $caption));
+  $attributes_array = array(
+    'text' => $text_content,
+    'image' => $image,
+    'caption' => $caption,
+  );
+  $content = theme($theme, $attributes_array);
   // Insert it into textarea field.
   layouter_insert_content_into_textarea($textarea_id, $content);
 }
 
 /**
- * Form for adding content for two_columns_text_img_left layout.
+ * Returns Form for adding content for two_columns_text_img_left layout.
  */
 function layouter_text_img_form($form, &$form_state) {
   $form_state['title'] = $form_state['form_info']['forms'][$form_state['step']]['form title'];
@@ -226,19 +250,22 @@ function layouter_text_img_form($form, &$form_state) {
   return $form;
 }
 
+/**
+ * Proccess Layouter Form with two_columns_text_img_left.
+ */
 function layouter_text_img_form_submit($form, &$form_state) {
   $values = $form_state['values'];
   $text_content = strip_tags($values['text_content']);
   $image_fid = $values['image_content']['image'];
   $image_style = $values['image_content']['image_style'];
-  
   $image_file = file_load($image_fid);
   $image_file->status = FILE_STATUS_PERMANENT;
   file_save($image_file);
-  $style_theme = ($image_style=='layouter_none') ? 'image' : 'image_style';
+  $style_theme = ($image_style == 'layouter_none') ? 'image' : 'image_style';
   $image = theme($style_theme, array('style_name' => $image_style, 'path' => $image_file->uri));
   $textarea_id = $form_state['textarea_id'];
-  // As we use the same form for different layouts we need to know which template to apply.
+  // As we use the same form for different layouts we need to know which
+  // template to apply.
   $theme = $form_state['form_info']['forms'][$form_state['step']]['theme'];
   // Apply the layout to the content.
   $content = theme($theme, array('text' => $text_content, 'image' => $image));
@@ -246,6 +273,9 @@ function layouter_text_img_form_submit($form, &$form_state) {
   layouter_insert_content_into_textarea($textarea_id, $content);
 }
 
+/**
+ * Returns the 'textarea' form item.
+ */
 function layouter_text_content() {
   return array(
     '#type' => 'textarea',
@@ -255,6 +285,9 @@ function layouter_text_content() {
   );
 }
 
+/**
+ * Returns the form item with actual settings, to upload image.
+ */
 function layouter_image_content() {
   $allowed_extensions = array('png gif jpeg jpg');
   $max_upload_size_mb = (int) ini_get('upload_max_filesize');
@@ -270,14 +303,22 @@ function layouter_image_content() {
     '#upload_validators' => array(
       'file_validate_extensions' => $allowed_extensions,
       'file_validate_size' => array($max_upload_size),
-    )
+    ),
   );
 }
 
+/**
+ * Returns image styles for prerendering image.
+ */
 function layouter_image_style() {
-  $admin_image_style_description = '';  if (user_access('administer image styles')) {
-  $admin_image_style_description = '<br />' . t('You can also <a href="@image_styles">add your own image style</a> if you need to.', 
-    array('@image_styles' => url('admin/config/media/image-styles')));
+  if (user_access('administer image styles')) {
+    $description = 'You can also <a href="@image_styles">'
+      . 'add your own image style</a> if you need to.';
+    $extra = array('@image_styles' => url('admin/config/media/image-styles'));
+    $admin_image_style_description = '<br />' . t($description, $extra);
+  }
+  else {
+    $admin_image_style_description = '';
   }
   $image_styles = variable_get('layouter_image_styles', image_styles());
   $image_styles_options = array();

@@ -44,6 +44,13 @@ class FppBundle {
   private $category = '';
 
   /**
+   * Indicates the state of automatically load the CSS & JS files for bundle.
+   *
+   * @var bool
+   */
+  private $assets = TRUE;
+
+  /**
    * Property getter.
    */
   public function getBundleId() {
@@ -79,6 +86,13 @@ class FppBundle {
   }
 
   /**
+   * Property getter.
+   */
+  public function isAssetsLoadAutomatically() {
+    return (bool) $this->assets;
+  }
+
+  /**
    * Get object representation as an array.
    *
    * @return array
@@ -101,5 +115,35 @@ class FppBundle {
    */
   public function export() {
     return array($this->machine => $this->getAllFieldsAsArray());
+  }
+
+  /**
+   * Create the bundle object from an array.
+   *
+   * @param array $bundle
+   *   Representation of the bundle as array.
+   *
+   * @throws \FppBundlesException
+   *   When not all necessary properties was set.
+   *
+   * @return $this
+   *   Bundle object.
+   */
+  public function import(array $bundle) {
+    $fields = get_object_vars($this);
+    $filled = 0;
+
+    foreach (array_keys($fields) as $field) {
+      if (isset($bundle[$field])) {
+        $this->$field = $bundle[$field];
+        $filled++;
+      }
+    }
+
+    if (count($fields) != $filled) {
+      throw \FppBundlesException::set(t('The bundle cannot to be imported from an array because the number of items is not equal to the properties number.'));
+    }
+
+    return $this;
   }
 }

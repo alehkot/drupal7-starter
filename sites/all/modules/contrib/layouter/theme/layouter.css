@@ -1,13 +1,3 @@
-.layouter-link-wrapper a{
-  position: absolute;
-  margin: -62px 0 0 2px;
-  border: 4px solid #909090;
-  border-radius: 5px;
-  background: url(images/icon.png) no-repeat;
-  width: 60px;
-  height: 42px;
-  opacity: 0.5;
-}
 .layouter-link-wrapper a:hover{
   opacity: 0.85;
 }

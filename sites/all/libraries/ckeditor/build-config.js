@@ -13,10 +13,10 @@
  * (1) http://ckeditor.com/builder
  *     Visit online builder to build CKEditor from scratch.
  *
- * (2) http://ckeditor.com/builder/e6b8a045f8f984a69463975ca3e6524a
+ * (2) http://ckeditor.com/builder/7d04916a09a9812b9f90c8fa2cb608aa
  *     Visit online builder to build CKEditor, starting with the same setup as before.
  *
- * (3) http://ckeditor.com/builder/download/e6b8a045f8f984a69463975ca3e6524a
+ * (3) http://ckeditor.com/builder/download/7d04916a09a9812b9f90c8fa2cb608aa
  *     Straight download link to the latest version of CKEditor (Optimized) with the same setup as before.
  *
  * NOTE:
@@ -29,20 +29,15 @@ var CKBUILDER_CONFIG = {
 	preset: 'full',
 	ignore: [
 		'.bender',
+		'.DS_Store',
+		'.gitignore',
+		'.gitattributes',
+		'.idea',
+		'.mailmap',
 		'bender.js',
 		'bender-err.log',
 		'bender-out.log',
 		'dev',
-		'.DS_Store',
-		'.gitattributes',
-		'.gitignore',
-		'Gruntfile.js',
-		'gruntfile.js',
-		'.idea',
-		'.jscsrc',
-		'.jshintignore',
-		'.jshintrc',
-		'.mailmap',
 		'node_modules',
 		'package.json',
 		'README.md',
@@ -94,10 +89,12 @@ var CKBUILDER_CONFIG = {
 		'save' : 1,
 		'scayt' : 1,
 		'selectall' : 1,
+		'sharedspace' : 1,
 		'showblocks' : 1,
 		'showborders' : 1,
 		'smiley' : 1,
 		'sourcearea' : 1,
+		'sourcedialog' : 1,
 		'specialchar' : 1,
 		'stylescombo' : 1,
 		'tab' : 1,

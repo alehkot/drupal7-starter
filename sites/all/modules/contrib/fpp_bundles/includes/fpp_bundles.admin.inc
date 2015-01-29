@@ -118,9 +118,22 @@ function _fpp_bundles_manage_bundle_form(array $form, array &$form_state, \FppBu
 
   $items['level'] = array(
     '#type' => 'checkbox',
-    '#title' => t('An entity will be shown in the general list.'),
-    '#description' => '',
+    '#title' => t('An entity will be shown in the general list?'),
+    '#description' => t('If "checked", bundle will not shown in category.'),
     '#default_value' => $bundle->isTopLevelPanel(),
+  );
+
+  $items['assets'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Include CSS & JS files for this bundle automatically?'),
+    '#default_value' => $bundle->isAssetsLoadAutomatically(),
+    '#description' => t('If "checked", module will attempt to include assets on page on which bundle is used. For additional information see the !url page.', array(
+      '!url' => l(t('help'), 'admin/help/' . FPP_BUNDLES_MACHINE_NAME, array(
+        'attributes' => array(
+          'target' => '_blank',
+        ),
+      )),
+    )),
   );
 
   $form['actions'] = array(
@@ -165,33 +178,22 @@ function _fpp_bundles_check_machine_name_existence($machine_name) {
  * Validation handler for _fpp_bundles_manage_bundle_form().
  */
 function _fpp_bundles_manage_bundle_form_validate(array $form, array &$form_state) {
-  $values =& $form_state['values'];
+  $values = $form_state['values'];
 
-  // Validation is necessary only when the data can be updated,
-  // namely on "create" and "update" actions.
-  if ($values['action'] != FPP_BUNDLES_REMOVE_BUNDLE_ACTION) {
-    foreach (array('name', 'category') as $field_name) {
-      $values[$field_name] = trim(filter_xss($values[$field_name]));
-    }
-
-    if (empty($values['name'])) {
-      form_set_error('name', t('The name of bundle should not be empty and can contain only latin letters.'));
-    }
-    elseif (!strlen(preg_replace('/\d+|\s+/', '', $values['name']))) {
-      form_set_error('name', t('The name of bundle should not contain only numbers.'));
-    }
-    elseif (strlen($values['name']) < FPP_BUNDLES_MINIMUM_CHARS_FOR_NAME) {
-      form_set_error('name', t('The name of bundle should contain more than !number symbols.', array(
-        '!number' => FPP_BUNDLES_MINIMUM_CHARS_FOR_NAME,
-      )));
-    }
+  if (empty($values['category'])) {
+    unset($values['category']);
   }
 
   try {
-    $form_state['bundle'] = fpp_bundles_db()->prepareBundleData($values);
+    $form_state['bundle'] = fpp_bundles_db()->validateBundle($values);
   }
   catch (\FppBundlesException $e) {
     form_set_error('name', $e->getMessage());
+  }
+
+  // Set the remove action if needed.
+  if ($values['action'] == FPP_BUNDLES_REMOVE_BUNDLE_ACTION) {
+    $form_state['bundle']['action'] = $values['action'];
   }
 }
 
@@ -199,20 +201,16 @@ function _fpp_bundles_manage_bundle_form_validate(array $form, array &$form_stat
  * Submit handler for _fpp_bundles_manage_bundle_form().
  */
 function _fpp_bundles_manage_bundle_form_submit(array $form, array &$form_state) {
-  $values = $form_state['values'];
+  $bundle = $form_state['bundle'];
   // @todo Remove all fields of the bundle together with it.
-  $status = fpp_bundles_db()->performAction($values['action'], $form_state['bundle']);
+  $status = fpp_bundles_db()->performAction($bundle['action'], $bundle['values']);
   $message = t('Cannot complete the "!action" operation.', array(
-    '!action' => $values['action'],
+    '!action' => $bundle['action'],
   ));
 
   if ($status) {
     _fpp_bundles_clear_caches();
-
-    $message = _fpp_bundles_get_action_success_message_by_name(
-      $values['action'],
-      $values['name']
-    );
+    $message = _fpp_bundles_get_action_success_message_by_name($bundle['action'], $bundle['values']['name']);
   }
 
   drupal_set_message($message);

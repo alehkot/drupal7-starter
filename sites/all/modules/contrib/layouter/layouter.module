@@ -12,7 +12,7 @@ function layouter_menu() {
     'page arguments' => array('layouter_config_main_form'),
     'access arguments' => array('administer layouter'),
     'file' => 'includes/layouter.admin.inc',
-    'type' => MENU_NORMAL_ITEM
+    'type' => MENU_NORMAL_ITEM,
   );
   $items['layouter/%'] = array(
     'title' => 'Choose Layout',
@@ -20,7 +20,7 @@ function layouter_menu() {
     'page arguments' => array(1),
     'access callback' => TRUE,
     'file' => 'includes/layouter.pages.inc',
-    'type' => MENU_CALLBACK
+    'type' => MENU_CALLBACK,
   );
   return $items;
 }
@@ -32,79 +32,79 @@ function layouter_permission() {
   $items = array();
   $items['administer layouter'] = array(
     'title' => t('Administer Layouter'),
-    'description' => t('Allow to edit Layouter settings.')
+    'description' => t('Allow to edit Layouter settings.'),
   );
   $items['use layouter'] = array(
     'title' => t('Use Layouter'),
-    'description' => t('Allow to use Layouter for editing content.')
+    'description' => t('Allow to use Layouter for editing content.'),
   );
   return $items;
 }
 
 /**
- * Implements hook_theme()
+ * Implements hook_theme().
  */
 function layouter_theme($existing, $type, $theme, $path) {
   return array(
     'layouter_image_only' => array(
       'variables' => array('image' => NULL),
-      'template' => 'theme/tpl/image_only'
+      'template' => 'theme/tpl/image_only',
     ),
     'layouter_two_columns' => array(
       'variables' => array('text' => NULL),
-      'template' => 'theme/tpl/two_columns'
+      'template' => 'theme/tpl/two_columns',
     ),
     'layouter_two_columns_img_left_text_right' => array(
       'variables' => array(
         'text' => NULL,
         'image' => NULL,
-        'caption' => NULL
+        'caption' => NULL,
       ),
-      'template' => 'theme/tpl/two_columns_img_left_text_right'
+      'template' => 'theme/tpl/two_columns_img_left_text_right',
     ),
     'layouter_two_columns_img_right_text_left' => array(
       'variables' => array(
         'text' => NULL,
         'image' => NULL,
-        'caption' => NULL
+        'caption' => NULL,
       ),
-      'template' => 'theme/tpl/two_columns_img_right_text_left'
+      'template' => 'theme/tpl/two_columns_img_right_text_left',
     ),
     'layouter_two_columns_text_img_left' => array(
       'variables' => array(
         'text' => NULL,
-        'image' => NULL
+        'image' => NULL,
       ),
-      'template' => 'theme/tpl/two_columns_text_img_left'
+      'template' => 'theme/tpl/two_columns_text_img_left',
     ),
     'layouter_big_img_text_below' => array(
       'variables' => array(
         'text' => NULL,
-        'image' => NULL
+        'image' => NULL,
       ),
-      'template' => 'theme/tpl/big_img_text_below'
+      'template' => 'theme/tpl/big_img_text_below',
     ),
     'layouter_big_img_text_above' => array(
       'variables' => array(
         'text' => NULL,
-        'image' => NULL
+        'image' => NULL,
       ),
-      'template' => 'theme/tpl/big_img_text_above'
+      'template' => 'theme/tpl/big_img_text_above',
     ),
     'layouter_big_img_two_column_text_below' => array(
       'variables' => array(
         'text' => NULL,
-        'image' => NULL
+        'image' => NULL,
       ),
-      'template' => 'theme/tpl/big_img_two_column_text_below'
+      'template' => 'theme/tpl/big_img_two_column_text_below',
     ),
     'layouter_big_img_two_column_text_above' => array(
       'variables' => array(
         'text' => NULL,
-        'image' => NULL
+        'image' => NULL,
       ),
-      'template' => 'theme/tpl/big_img_two_column_text_above'
-    )
+      'template' => 'theme/tpl/big_img_two_column_text_above',
+    ),
   );
 }
 
@@ -118,7 +118,7 @@ function layouter_element_info_alter(&$types) {
 }
 
 /**
- * Checks if given textarea element is eligible to have Layouter functionality enabled, and processes it if so.
+ * Processes textarea element if it is allowed to enable Layouter.
  */
 function layouter_text_format_pre_render($element) {
   require_once 'includes/layouter.inc';
@@ -130,8 +130,19 @@ function layouter_text_format_pre_render($element) {
   $active_text_formats = layouter_active_text_formats();
   $active_content_types = layouter_active_content_types();
   drupal_add_js(array('layouter' => array('active_text_formats' => $active_text_formats)), 'setting');
-  if (empty($element['#bundle']) || !in_array($element['#bundle'], $active_content_types)) {
-    return $element;
+  // Field collection integration.
+  if (module_exists('field_collection')) {
+    if ($element['#entity_type'] == 'field_collection_item') {
+      $host_entity = $element['#entity']->hostEntity();
+      if (!in_array($host_entity->type, $active_content_types)) {
+        return $element;
+      }
+    }
+  }
+  else {
+    if (empty($element['#bundle']) || !in_array($element['#bundle'], $active_content_types)) {
+      return $element;
+    }
   }
   if (isset($element['value'])) {
     $element['value'] = layouter_load_by_field($element['value'], $element['format']['format']);

@@ -25,25 +25,23 @@ function layouter_config_main_form() {
   $form['layouter_text_formats'] = array(
     '#type' => 'checkboxes',
     '#title' => t('Text formats'),
-    '#description' => t('Choose input formats for which you want to enable Layouter'
-      . '<br />Attention : Make sure that the choosed formats allowed HTML tags: 
-      &lt;img&gt; &lt;div&gt; &lt;p&gt; and also tags used in layouter-extension modules.'),
+    '#description' => t('Choose input formats for which you want to enable Layouter<br />Attention : Make sure that the choosed formats allowed HTML tags: &lt;img&gt; &lt;div&gt; &lt;p&gt; and also tags used in layouter-extension modules.'),
     '#options' => $text_formats,
-    '#default_value' => variable_get('layouter_text_formats', $text_formats)
+    '#default_value' => variable_get('layouter_text_formats', $text_formats),
   );
   $form['layouter_content_types'] = array(
     '#type' => 'checkboxes',
     '#title' => t('Content types'),
     '#description' => t('Choose content types for which you want to enable Layouter'),
     '#options' => $content_types,
-    '#default_value' => variable_get('layouter_content_types', $content_types)
+    '#default_value' => variable_get('layouter_content_types', $content_types),
   );
   $form['layouter_image_styles'] = array(
     '#type' => 'checkboxes',
     '#title' => t('Image styles'),
     '#description' => t('Choose image styles for which you want to enable alter the original image in Layouter'),
     '#options' => $image_styles_options,
-    '#default_value' => variable_get('layouter_image_styles', $image_styles_options)
+    '#default_value' => variable_get('layouter_image_styles', $image_styles_options),
   );
   $form['layouter_modal_style'] = array(
     '#type' => 'checkbox',

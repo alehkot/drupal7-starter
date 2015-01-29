@@ -1,0 +1,415 @@
+<?php
+
+/**
+ * @file workbench_workflows.module
+ */
+
+define('WORKBENCH_WORKFLOWS_STATE_UNCHANGED', -1);
+define('WORKBENCH_WORKFLOWS_STATE_UNPUBLISHED', 0);
+define('WORKBENCH_WORKFLOWS_STATE_PUBLISHED', 1);
+
+/**
+ * Implements hook_permissions().
+ */
+function workbench_workflows_permission() {
+  return array(
+    'administer_workbench_workflows' => array(
+      'title' => t('Administer workbench moderation exportables'),
+    ),
+  );
+}
+
+/**
+ * Implementation of hook_ctools_plugin_directory() to let the system know
+ * we implement task and task_handler plugins.
+ */
+function workbench_workflows_ctools_plugin_directory($module, $plugin) {
+  // Most of this module is implemented as an export ui plugin, and the
+  // rest is in ctools/includes/workbench_states.inc
+  if ($module == 'ctools' && ($plugin == 'export_ui')) {
+    return 'plugins/' . $plugin;
+  }
+}
+
+/**
+ * Create an array of exportable states/events/workflows suitable for FAPI.
+ *
+ * @param string $type
+ *   Allowed values are 'states', 'events', and 'workflows'
+ * @param string $name
+ *   The machine name of the exportable.
+ * @param $reset
+ *   A boolean for whether the static cache should be reset.
+ */
+function workbench_workflows_options($type = 'states', $label_key = 'admin_title', $reset = FALSE) {
+
+  // load all objects of this type
+  $exportables = workbench_workflows_load_all($type, $reset);
+
+  $return = array();
+  foreach($exportables as $exportable) {
+    $return[$exportable->name] = $exportable->{$label_key};
+  }
+
+  return $return;
+}
+
+/**
+ * Determines if access an entity has access to a state/event/workflow
+ *
+ * @param $entity
+ *   A Drupal entity. Currently only nodes are supported.
+ * @param $exportable
+ *   The machine name of an exportable or the loaded object.
+ * @param $exportable_type
+ *   Allowed values are 'states', 'events', and 'workflows'
+ */
+function workbench_workflows_exportable_access($entity, $exportable, $exportable_type = 'states') {
+
+  $contexts = array();
+
+  // The exportable might already be the loaded object.
+  if (is_string($exportable)) {
+    ctools_include('export');
+    $exportable = workbench_workflows_load($exportable_type, $exportable);
+  }
+
+  // Create a CTools context.
+  if (!empty($exportable->requiredcontexts[0]['name'])) {
+    ctools_include('context');
+    $contexts[] = ctools_context_create($exportable->requiredcontexts[0]['name'], $entity);
+  }
+
+  // Load all the contexts.
+  // @todo, we may need a user context other than "currently logged-in user."
+  $contexts = ctools_context_match_required_contexts($exportable->requiredcontexts, $contexts);
+  $contexts = ctools_context_load_contexts($exportable, FALSE, $contexts);
+
+  return ctools_access($exportable->access, $contexts);
+}
+
+/**
+ * Load a single workbench moderation exportable.
+ *
+ * @param string $type
+ *   Allowed values are 'states', 'events', and 'workflows'
+ * @param string $name
+ *   The machine name of the exportable.
+ * Returns a CTools exportable object.
+ */
+function workbench_workflows_load($type, $name) {
+  $cache = &drupal_static('workbench_workflows_load_all', array());
+
+  // We use array_key_exists because failed loads will be NULL and
+  // isset() will try to load it again.
+  if (empty($cache[$type]) || !array_key_exists($name, $cache[$type])) {
+    ctools_include('export');
+    $result = ctools_export_load_object('workbench_workflows_' . $type, 'names', array($name));
+    // If scheduling is enabled we need some transition events and a schedule
+    // state. These items can be generated dynamically based on the available
+    // configuration.
+    if (module_exists('state_flow_schedule')) {
+      // Create transition events for schedulable event.
+      if ($type == 'events' && strpos($name, 'schedule_') === 0 && ($source_event = workbench_workflows_load($type, substr($name, 9))) && !empty($source_event->schedulable)) {
+        $transition_event = workbench_workflows_create_scheduled_tansition_event($source_event);
+        $result[$transition_event->name] = $transition_event;
+      }
+      // Add a schedule state.
+      if ($type == 'states' && $name == 'schedule') {
+        $result['schedule'] = workbench_workflows_create_schedule_state();
+      }
+    }
+
+    if (isset($result[$name])) {
+      $cache[$type][$name] = $result[$name];
+    }
+    else {
+      $cache[$type][$name] = NULL;
+    }
+  }
+
+  if (isset($cache[$type][$name])) {
+    return $cache[$type][$name];
+  }
+}
+
+/**
+ * Load a single, unsanitized workbench moderation exportable label.
+ *
+ * @param string $type
+ *   Allowed values are 'states', 'events', and 'workflows'
+ * @param string $name
+ *   The machine name of the exportable.
+ * @param string $label_property
+ *   The property on the exportable to return. Defaults to admin_title.
+ * Returns an UNESCAPED string.
+ */
+function workbench_workflows_load_label($type, $name, $label_property = 'admin_title') {
+  $exportable = workbench_workflows_load($type, $name);
+  if (!empty($exportable->{$label_property})) {
+    return $exportable->{$label_property};
+  }
+  return '';
+}
+
+/**
+ * Load a single workbench moderation exportable.
+ *
+ * @param string $type
+ *   Allowed values are 'states', 'events', and 'workflows'
+ * @param string $name
+ *   The machine name of the exportable.
+ * @param $reset
+ *   A boolean for whether the static cache should be reset.
+ * Returns a CTools exportable object.
+ */
+function workbench_workflows_load_all($type = 'states', $reset = FALSE) {
+
+  $cache = &drupal_static('workbench_workflows_load_all', array());
+
+  // We check our own private static because individual minis could have
+  // been loaded prior to load all and we need to know that.
+  if (empty($cache[$type]) || $reset) {
+
+    // If reseting, also reset ctools_export_load_object_all.
+    // It seems like overkill but it is the cache used by ctools_export_load_object()
+    // @todo, this needs a test.
+    if ($reset) {
+      drupal_static_reset('ctools_export_load_object_all');
+    }
+
+    $all_loaded = TRUE;
+    if ($reset) {
+      $cache = array();
+    }
+
+    ctools_include('export');
+    $type_exportables = ctools_export_load_object('workbench_workflows_' . $type);
+
+    // The sort function expects a title property.
+    // @todo, perhaps these objects should have those as a column. For now,
+    // copy the admin_title.
+    foreach($type_exportables as $machine_name => $exportable) {
+      if (empty($exportable->title) && !empty($exportable->admin_title)) {
+        $type_exportables[$machine_name]->title = $exportable->admin_title;
+      }
+
+      // If scheduling is enabled we need some transition events and a schedule
+      // state. These items can be generated dynamically based on the available
+      // configuration.
+      if (module_exists('state_flow_schedule')) {
+        // Create transition events for schedulable event.
+        if ($type == 'events' && !empty($exportable->schedulable)) {
+          $transition_event = workbench_workflows_create_scheduled_tansition_event($type_exportables[$machine_name]);
+          $type_exportables[$transition_event->name] = $transition_event;
+        }
+        // Add schedule state.
+        if ($type == 'states') {
+          $state = workbench_workflows_create_schedule_state();
+          $type_exportables[$state->name] = $state;
+        }
+      }
+    }
+
+    uasort($type_exportables, 'ctools_plugin_sort');
+    $cache[$type] = $type_exportables;
+  }
+
+  return $cache[$type];
+}
+
+/**
+ * Load enabled workbench moderation exportables.
+ *
+ * @param string $type
+ *   Allowed values are 'states', 'events', and 'workflows'
+ * @param string $name
+ *   The machine name of the exportable.
+ * @param $reset
+ *   A boolean for whether the static cache should be reset.
+ * Returns a CTools exportable object.
+ */
+function workbench_workflows_load_enabled($type = 'states', $reset = FALSE) {
+  $exportables = workbench_workflows_load_all($type, $reset);
+  foreach($exportables as $machine_name => $exportable) {
+    if (!empty($exportable->disabled)) {
+      unset($exportables[$machine_name]);
+    }
+  }
+  return $exportables;
+}
+
+/**
+ * Creates a new transition event for scheduling.
+ *
+ * If an event is schedulable we need an event that doesn't do the
+ * transition immediately but keeps the current state and waits until the
+ * scheduled event is fired.
+ * Create such a transition event based on the schedulable event.
+ *
+ * @param object $event
+ *   Schedulable event to create transition event for.
+ *
+ * @return object
+ *   Transition event.
+ */
+function workbench_workflows_create_scheduled_tansition_event($event) {
+  // As this is a schedulable event, it has to accepts schedule as origin state.
+  $event->origin_states += array('schedule' => 'schedule');
+
+  $transition_event = clone $event;
+  unset($transition_event->eventid);
+  $transition_event->name = 'schedule_' . $event->name;
+  $transition_event->schedulable = 0;
+  $transition_event->target_state = 'schedule';
+  $transition_event->export_type = EXPORT_IN_CODE;
+  $transition_event->export_module = 'workbench_workflows';
+  $transition_event->admin_title = 'Schedule: ' . $event->admin_title;
+  $transition_event->title = $transition_event->admin_title;
+  return $transition_event;
+}
+
+/**
+ * Creates the state used for scheduling.
+ *
+ * @return object
+ *   Schedule state.
+ */
+function workbench_workflows_create_schedule_state() {
+  return (object) array(
+    'name' => 'schedule',
+    'title' => 'Scheduled',
+    'admin_title' => 'Scheduled',
+    'admin_description' => 'Event is scheduled',
+    'requiredcontexts' => array(),
+    'contexts' => array(),
+    'relationships' => array(),
+    'access' => array(),
+    'weight' => 1,
+  );
+}
+
+/**
+ * Implements hook_menu_alter().
+ */
+function workbench_workflows_menu_alter(&$items) {
+  // Move up the states link.
+  // @todo, is there a way to set the weight at the plugin registration?
+  $items['admin/config/workflow/workbench-workflows/states']['weight'] = -111;
+}
+
+/**
+ * Implements hook_state_flow_plugins().
+ */
+function workbench_workflows_state_flow_entity_plugins() {
+  // @todo, need to clear the cache of these plugins after a state/event/workflow is saved.
+    module_load_include('inc', 'workbench_workflows', 'workbench_workflows.state_flow_entity');
+  return _workbench_workflows_state_flow_entity_plugins();
+}
+
+/**
+ * Implements hook_state_flow_machine_type_alter()
+ */
+function workbench_workflows_state_flow_entity_machine_type_alter(&$machine_type, $entity, $entity_type) {
+  if ($entity_type == 'node') {
+    module_load_include('inc', 'workbench_workflows', 'workbench_workflows.state_flow_entity');
+    $workflow = workbench_workflows_select_workflow($entity);
+    if (!empty($workflow->name)) {
+      $machine_type = 'workbench_workflows__' . $workflow->name;
+    }
+    // This variable still needs a UI @http://drupal.org/node/1741432
+    else if (variable_get('workbench_workflows_default_to_ignore', FALSE)) {
+      $machine_type = 'workbench_workflows_ignore';
+    }
+  }
+}
+
+/**
+ * Guard callback for the workbenchStates publish and unpublish events.
+ */
+function workbench_workflows_guard($event) {
+
+  $entity = $event->get_machine()->get_object();
+  // Check if this is prohibited based on the events rules.
+  if (!workbench_workflows_exportable_access($entity, $event->name, 'events')) {
+    return FALSE;
+  } else {
+    return workbench_workflows_exportable_access($entity, $event->get_option('target'), 'states');
+  }
+}
+
+/**
+ * Implements hook_state_flow_schedule_schedulable_events_alter().
+ */
+function workbench_workflows_state_flow_schedule_schedulable_events_alter(&$schedulable_events) {
+  $events = workbench_workflows_load_enabled('events');
+  foreach ($events as $event) {
+    if (!empty($event->schedulable)) {
+      // Register automatically created transition events as schedulable. And
+      // register the schedulable event as target event.
+      $schedulable_events['schedule_' . $event->name] = $event->name;
+    }
+  }
+}
+
+/**
+ * Implements hook_entity_revision_operation_info().
+ */
+function workbench_workflows_entity_revision_operation_info() {
+  $info = array();
+  $events = workbench_workflows_options('events');
+  foreach ($events as $event => $label) {
+    $info['node']['workbench_moderation_' . $event] = array(
+      'label' => t('Moderate to @label', array('@label' => $label)),
+      'access callback' => TRUE,
+      'callback' => 'workbench_workflows_revision_operation_process',
+      'file' => __FILE__,
+    );
+  }
+  return $info;
+}
+
+/**
+ * Implements hook_entity_revision_operation_access().
+ */
+function workbench_workflows_entity_revision_operation_access($operation, $entity_type, $entity, $account) {
+  if (strpos($operation['operation'], 'workbench_moderation_') !== FALSE && !empty($entity) && $entity_type == 'node') {
+    $machine = state_flow_entity_load_state_machine($entity, $entity_type);
+    $events = $machine->get_available_events_options(TRUE);
+
+    $event = substr($operation['operation'], 21);
+    // Make sure this is a valid transition.
+    if (!isset($events[$event])) {
+      return FALSE;
+    }
+  }
+}
+
+/**
+ * Revision operation process callback for scheduled moderation state changes.
+ */
+function workbench_workflows_revision_operation_process($entity, $operation) {
+  // Extract the transition to state from the operation key: 'workbench_moderation_state'.
+  $event = substr($operation->operation, 21);
+  $machine = state_flow_entity_load_state_machine($entity, $operation->entity_type);
+  if (!empty($machine) && !$machine->ignore()) {
+    $machine->fire_event($event);
+  }
+}
+
+/**
+ * Implements hook_entity_revision_operation_result_state().
+ */
+function workbench_workflows_entity_revision_operation_result_state($operation, $entity) {
+  $event_name = substr($operation->operation, 21);
+  $event = workbench_workflows_load('events', $event_name);
+  if ($event) {
+    $state = workbench_workflows_load('states', $event->target_state);
+    if (isset($state->entity_state_change) && $state->entity_state_change != WORKBENCH_WORKFLOWS_STATE_UNCHANGED) {
+      // Return TRUE for accessible if the status is published.
+      return $state->entity_state_change == WORKBENCH_WORKFLOWS_STATE_PUBLISHED;
+    }
+    // Return the unchanged status.
+    return (bool) $entity->status;
+  }
+}

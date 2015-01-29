@@ -35,6 +35,14 @@ function aes_menu() {
     'type' => MENU_LOCAL_TASK,
   );
 
+  $items['aes_get_password_callback/%'] = array(
+    'title' => 'User\'s password',
+    'page callback' => 'aes_ajax_callback',
+    'page arguments' => array(1),
+    'access arguments' => array('view passwords'),
+    'type' => MENU_CALLBACK,
+  );
+
   return $items;
 }
 
@@ -55,9 +63,16 @@ function aes_permission() {
   );
 }
 
+/**
+ * Loads phpseclib.
+ *
+ * @return bool|int
+ *   TRUE on success, negative error code if something went wrong.
+ */
 function aes_load_phpsec() {
 
-  // Find out where this module is located and set up an include path for the phpsec library.
+  // Find out where this module is located and set up an include path for the
+  // phpsec library.
   if (module_exists('libraries') && libraries_get_path('phpseclib')) {
     $phpsec_include_path = libraries_get_path('phpseclib');
   }
@@ -82,16 +97,25 @@ function aes_load_phpsec() {
   return TRUE;
 }
 
+/**
+ * Access callback for a separate tab page with password.
+ *
+ * @param $access
+ *   Permission name.
+ * @param $uid
+ *   User ID.
+ * @return bool
+ *   Is access granted? So should tab page be generated or not.
+ */
 function aes_show_password_page($access, $uid) {
-
-  $viewing_method = variable_get("aes_viewing_method", "collapsible");
-
-  if (user_access($access) && aes_password_exists($uid) && ($viewing_method == "page" || $viewing_method == "both")) {
-    return TRUE;
-  }
-  return FALSE;
+  $viewing_method = variable_get("aes_viewing_method", "page");
+  return user_access($access) && aes_password_exists($uid)
+    && ($viewing_method == "page" || $viewing_method == "both");
 }
 
+/**
+ * Inits aes_config form.
+ */
 function aes_config() {
   $phpseclib_error_msg = "";
 
@@ -105,19 +129,19 @@ function aes_config() {
     $phpseclib_error_msg = " <span style=\"color:#f00;\">" . t("Warning: phpseclib was found but can't be loaded since this sever doesn't allow setting the PHP include path.") . "</span>";
   }
   elseif ($phpsec_load_result == -2) {
-    // Couldn't find phpseclib - don't output anything since this is perfectly normal if using mcrypt.
+    // Couldn't find phpseclib - don't output anything since this is perfectly
+    // normal if using mcrypt.
   }
   elseif ($phpsec_load_result == -3) {
     // Found phpseclib, but couldn't read its files.
     $phpseclib_error_msg = " <span style=\"color:#f00;\">" . t("Warning: phpseclib was found but couldn't be read, check permissions.") . "</span>";
   }
 
-  if (file_exists(variable_get("aes_key_path", "")) && is_writable(variable_get("aes_key_path", "")) == FALSE && variable_get("aes_key_storage_method", "") == "File") {
-    drupal_set_message(t("The keyfile %keyfile_path is not writable. This module needs to be able to write to this file to update the encryption key.", array('%keyfile_path' => variable_get("aes_key_path", ""))), "error");
+  if (file_exists(variable_get("aes_key_path", "")) && is_writable(variable_get("aes_key_path", "")) == FALSE && variable_get("aes_key_storage_method", "Database") == "File") {
+    drupal_set_message(t("The keyfile %keyfile_path is not writable. This module needs to be able to write to this file to update the encryption key.", array('%keyfile_path' => variable_get("aes_key_path", ""))), "warning");
   }
 
   $form = array();
-
   $form['aes'] = array(
     '#type' => 'fieldset',
     '#title' => t('AES settings'),
@@ -166,13 +190,13 @@ function aes_config() {
     '#type' => 'select',
     '#title' => t('Method for viewing passwords'),
     '#options' => array(
-      'collapsible' => t('Collapsible box'),
+      'inplace' => t('In place'),
       'page' => t('Own page'),
       'both' => t('Both'),
       'neither' => t('Neither')
     ),
-    '#default_value' => variable_get("aes_viewing_method", "collapsible"),
-    '#description' => t('Whether to show the password as a collapsible box on the user info page (collapsed/hidden by default) on a separate page with a tab on the user page, both, or neither.'),
+    '#default_value' => variable_get("aes_viewing_method", "page"),
+    '#description' => t('Whether to show the password as an in-place AJAX field on the user info page or on a separate page with a tab on the user page, both, or neither.'),
   );
 
   if (variable_get("aes_implementation", "mcrypt") == "phpseclib") {
@@ -203,7 +227,7 @@ function aes_config() {
     '#type' => 'select',
     '#title' => t('Key storage method'),
     '#options' => array('Database' => 'Database', 'File' => 'File'),
-    '#default_value' => variable_get("aes_key_storage_method", ""),
+    '#default_value' => variable_get("aes_key_storage_method", "Database"),
     '#description' => t('If possible, you should use the file storage method and assign a path below.'),
   );
 
@@ -211,7 +235,7 @@ function aes_config() {
     '#type' => 'textfield',
     '#title' => t('Path to keyfile'),
     '#default_value' => variable_get("aes_key_path", ""),
-    '#description' => t('The path, including the filename, of the file in which to store your key. The access restrictions on this file should be set as high as possible while still allowing PHP read/write access.'),
+    '#description' => t('The path, including the filename, of the file in which to store your key. The access restrictions on this file should be set as high as possible while still allowing webserver read/write access.'),
   );
 
   $form['aes']['aes_key'] = array(
@@ -233,6 +257,9 @@ function aes_config() {
   return $form;
 }
 
+/**
+ * Validates aes_config form.
+ */
 function aes_config_validate($form, &$form_state) {
 
   if (empty($form_state['values']['aes_implementation'])) {
@@ -245,7 +272,8 @@ function aes_config_validate($form, &$form_state) {
     }
   }
 
-  //if the storage method is set to File, check that the file can be openend for writing
+  // If the storage method is set to File, check that the file can be openend
+  // for writing
   if ($form_state['values']['aes_key_storage_method'] == "File") {
     $fp = @fopen($form_state['values']['aes_key_path'], "a");
 
@@ -259,7 +287,13 @@ function aes_config_validate($form, &$form_state) {
 
 }
 
+/**
+ * Submits aes_config form.
+ */
 function aes_config_submit($form, &$form_state) {
+
+  variable_set("aes_viewing_method", $form_state['values']['view_method']);
+
   if ($form_state['values']['aes_convert']) {
     if (!variable_get("aes_convert", FALSE)) {
       variable_set("aes_convert", TRUE);
@@ -274,9 +308,9 @@ function aes_config_submit($form, &$form_state) {
   }
 
   // Check if the storage method or key path has changed.
-  if (($form_state['values']['aes_key_storage_method'] != variable_get("aes_key_storage_method", "")) || ($form_state['values']['aes_key_path'] != variable_get("aes_key_path",""))) {
+  if (($form_state['values']['aes_key_storage_method'] != variable_get("aes_key_storage_method", "Database")) || ($form_state['values']['aes_key_path'] != variable_get("aes_key_path",""))) {
     // If it has changed, we need to move the key.
-    if ($form_state['values']['aes_key_storage_method'] != variable_get("aes_key_storage_method", "")) {
+    if ($form_state['values']['aes_key_storage_method'] != variable_get("aes_key_storage_method", "Database")) {
       drupal_set_message(t("Switching key storage method to %method.", array('%method' => $form_state['values']['aes_key_storage_method'])));
     } else {
       drupal_set_message(t("Changed key file path."));
@@ -284,7 +318,7 @@ function aes_config_submit($form, &$form_state) {
     // get the key
     $key = aes_get_key();
     // delete the key from the old storage
-    aes_delete_key(variable_get("aes_key_storage_method", ""));
+    aes_delete_key(variable_get("aes_key_storage_method"));
     // set key path
     variable_set("aes_key_path", $form_state['values']['aes_key_path']);
     // set the new storage
@@ -293,122 +327,125 @@ function aes_config_submit($form, &$form_state) {
     aes_store_key($key);
   }
 
+  // To use if re-encryption is required.
+  $decrypt_params = array(
+    'string' => '',
+    'base64encoded' => TRUE,
+    'custom_key' => aes_get_key(),
+    'custom_cipher' => variable_get("aes_cipher", "rijndael-128"),
+    'custom_iv' => variable_get("aes_encryption_iv", ""),
+    'custom_implementation' => variable_get("aes_implementation", "mcrypt"),
+  );
+  $encrypt_params = array(
+    'string' => '',
+    'base64encode' => TRUE,
+    'custom_key' => NULL,
+    'custom_cipher' => NULL,
+    'custom_iv' => NULL,
+    'custom_implementation' => NULL,
+  );
+  $do_reencypt = FALSE;
+
   // If the cipher has changed...
   if ($form_state['values']['aes_cipher'] != variable_get("aes_cipher", "rijndael-128")) {
-    $result = db_query("SELECT uid, pass FROM {aes_passwords} WHERE uid != :uid", array(':uid' => 0));
-
-    $old_cipher = variable_get("aes_cipher", "rijndael-128");
     variable_set("aes_cipher", $form_state['values']['aes_cipher']);
     $new_cipher = $form_state['values']['aes_cipher'];
 
-    // Get the old iv.
-    $old_iv = variable_get("aes_encryption_iv", "");
     // update the cipher the system uses
     variable_set("aes_cipher", $form_state['values']['aes_cipher']);
-    // create a new iv to match the new cipher
+    // Create a new iv to match the new cipher.
     aes_make_iv();
-    // get the new iv
-    $new_iv = variable_get("aes_encryption_iv", "");
 
-    $updates_num = 0;
-    foreach ($result as $user) {
-
-      $plain_pass = aes_decrypt($user->pass, TRUE, NULL, $old_cipher, $old_iv);
-      $new_pass = aes_encrypt($plain_pass, TRUE, NULL, $new_cipher, $new_iv);
-
-      $updates_num++;
-      db_update('aes_passwords')
-        ->fields(array('pass' => $new_pass))
-        ->where("uid = :uid", array(
-          ':uid' => $user->uid,
-        ))
-        ->execute();
-    }
-    drupal_set_message(t("Updated the passwords of @updates_num users because of a change in cipher.", array('@updates_num' => $updates_num)));
+    $encrypt_params['custom_cipher'] = $new_cipher;
+    $encrypt_params['custom_iv'] = variable_get("aes_encryption_iv");
+    $do_reencypt = TRUE;
+    drupal_set_message(t("Cipher changed."));
   }
 
   // If the key has changed...
   if (!empty($form_state['values']['aes_key'])) {
-    $old_key = aes_get_key();
-    $result = aes_store_key($form_state['values']['aes_key']);
-
-    if ($result === FALSE) {
+    if (!aes_store_key($form_state['values']['aes_key'])) {
       drupal_set_message(t("Failed to write new encryption key! Aborting."));
       return;
     }
 
+    $encrypt_params['custom_key'] = $form_state['values']['aes_key'];
+    $do_reencypt = TRUE;
     drupal_set_message(t("Key changed."));
-
-    // Since the key has changed we need to re-encrypt all the passwords with the new key (except the anonymous account)
-    $result = db_query("SELECT uid, pass FROM {aes_passwords} WHERE uid != :uid", array(':uid' => 0));
-
-    $updates_num = 0;
-    foreach ($result as $user) {
-      $plain_pass = aes_decrypt($user->pass, TRUE, $old_key);
-      $new_pass = aes_encrypt($plain_pass, TRUE, $form_state['values']['aes_key']);
-      $updates_num++;
-
-      db_update('aes_passwords')
-        ->fields(array('pass' => $new_pass))
-        ->where("uid = :uid", array(
-          ':uid' => $user->uid,
-        ))
-        ->execute();
-    }
-
-    drupal_set_message(t("Updated the passwords of @updates_num users because of a change in key.", array('@updates_num' => $updates_num)));
-
   }
 
   // If the implementation has changed...
   if ($form_state['values']['aes_implementation'] != variable_get("aes_implementation", "mcrypt")) {
-
-    drupal_set_message(t("Implementation changed. Re-encrypting all passwords using new implementation."));
-
-    $a = db_query("SELECT uid, pass FROM {aes_passwords} WHERE uid != :uid", array(':uid' => 0));
-
-    $updates_num = 0;
-    foreach ($a as $user) {
-      $plain_pass = aes_decrypt($user->pass);
-      $new_pass = aes_encrypt($plain_pass, TRUE, NULL, NULL, NULL, $form_state['values']['aes_implementation']);
-      $updates_num++;
-
-      db_update('aes_passwords')
-        ->fields(array('pass' => $new_pass))
-        ->where("uid = :uid", array(
-          ':uid' => $user->uid,
-        ))
-        ->execute();
-    }
-
-    drupal_set_message(t("Updated the passwords of @updates_num users because of a change in implementation.", array('@updates_num' => $updates_num)));
-
     variable_set("aes_implementation", $form_state['values']['aes_implementation']);
+    $encrypt_params['custom_implementation'] = $form_state['values']['aes_implementation'];
+    $do_reencypt = TRUE;
 
     if ($form_state['values']['aes_implementation'] == "phpseclib") {
-      // If we have switched to phpseclib implementation, set the cipher to 128, since it's the only one phpseclib supports.
+      // If we have switched to phpseclib implementation, set the cipher to 128,
+      // since it's the only one phpseclib supports.
       variable_set("aes_cipher", "rijndael-128");
-      // Create a new IV, this IV won't actually be used by phpseclib, but it's needed if the implementation is switched back to mcrypt.
+      $encrypt_params['custom_cipher'] = "rijndael-128";
+      // Create a new IV, this IV won't actually be used by phpseclib, but it's
+      // needed if the implementation is switched back to mcrypt.
       aes_make_iv(TRUE);
+      $encrypt_params['custom_iv'] = variable_get("aes_encryption_iv");
     }
+    drupal_set_message(t("Implementation changed."));
   }
 
-  variable_set("aes_viewing_method", $form_state['values']['view_method']);
+  if ($do_reencypt) {
+    // Calling custom hook_aes_config_change from each module which
+    // implements this hook.
+    foreach (module_implements('aes_config_change') as $module) {
+      $function = $module . '_aes_config_change';
+      $function($decrypt_params, $encrypt_params);
+    }
+  }
+}
 
+/**
+ * Implements hook_aes_config_change().
+ */
+function aes_aes_config_change($decrypt_params, $encrypt_params) {
+  // Re encrypt user paswords.
+  $accounts = db_select('aes_passwords', 'p')
+    ->fields('p', array('uid', 'pass'))
+    ->condition('uid', 0, '!=')
+    ->execute()
+    ->fetchAll();
+  foreach ($accounts as $account) {
+    $decrypt_params['string'] = $account->pass;
+    $plain_pass = call_user_func_array('aes_decrypt', $decrypt_params);
+    $encrypt_params['string'] = $plain_pass;
+    $new_pass = call_user_func_array('aes_encrypt', $encrypt_params);
+    db_update('aes_passwords')
+      ->fields(array('pass' => $new_pass))
+      ->where("uid = :uid", array(
+        ':uid' => $account->uid,
+      ))
+      ->execute();
+  }
+  if (count($accounts)) {
+    drupal_set_message(t("Updated the passwords of @updates_num users because of a change in encryption settings.", array('@updates_num' => count($accounts))));
+  }
 }
 
 /**
  * Implements hook_user_view().
  */
 function aes_user_view($account, $view_mode, $langcode) {
-  if (user_access('view passwords') && (variable_get("aes_viewing_method", "page") == "collapsible" || variable_get("aes_viewing_method", "page") == "both") && variable_get("aes_convert", FALSE)) {
-
+  $viewing_method = variable_get("aes_viewing_method", "page");
+  if (user_access('view passwords') && ($viewing_method == "inplace" || $viewing_method == "both") && variable_get("aes_convert", FALSE)) {
     if (aes_password_exists($account->uid)) {
-      $password_form = drupal_get_form('aes_view_password_form', aes_get_password($account->uid, TRUE));
+      drupal_add_library('system', 'drupal.ajax');
+      $link = l(t('Show password'),
+        'aes_get_password_callback/' . $account->uid . '/nojs/',
+        array('attributes' => array('class' => array('use-ajax')))
+      );
       $account->content['info']['aes_password'] = array(
         '#type' => 'user_profile_item',
         '#title' => t('AES Encryption'),
-        '#markup' => drupal_render($password_form),
+        '#markup' => '<div id="aes_password">' . $link . '</div>',
       );
     }
     else {
@@ -418,8 +455,37 @@ function aes_user_view($account, $view_mode, $langcode) {
         '#markup' => t("This user's password does not yet exist in AES encrypted form."),
       );
     }
-
   }
+}
+
+/**
+ * Callback for user's password ajax link.
+ *
+ * Takes different logic paths based on whether Javascript was enabled.
+ * If $type == 'ajax', it tells this function that ajax.js has rewritten
+ * the URL and thus we are doing an AJAX and can return an array of commands.
+ *
+ * @param int $uid
+ *   User's identifier.
+ *
+ * @param string $type
+ *   Either 'ajax' or 'nojs'.
+ *
+ * @return string|array
+ *   If $type == 'ajax', returns an array of AJAX Commands.
+ *   Otherwise, just returns the content, which will end up being a page.
+ */
+function aes_ajax_callback($uid, $type = 'ajax') {
+  $output = aes_get_password($uid, TRUE);
+  if ($type != 'ajax') {
+    $user = user_load($uid, FALSE);
+    drupal_set_title($user->name . '\'s password');
+    return $output;
+  }
+  $commands = array();
+  $commands[] = ajax_command_replace('#aes_password', $output);
+  $page = array('#type' => 'ajax', '#commands' => $commands);
+  ajax_deliver($page);
 }
 
 /**
@@ -481,7 +547,8 @@ function aes_user_alter(&$edit, $account) {
       drupal_set_message(t("Couldn't update AES password since it's too long."), "error");
     }
     else {
-      // If this user doesn't have a password and creation of encrypted passwords is enabled, insert one now.
+      // If this user doesn't have a password and creation of encrypted
+      // passwords is enabled, insert one now.
       if (aes_password_exists($account->uid) == FALSE) {
         if (variable_get("aes_convert", FALSE)) {
           db_insert('aes_passwords')
@@ -492,7 +559,8 @@ function aes_user_alter(&$edit, $account) {
             ->execute();
         }
       }
-      // Otherwise update the password - always do this even if the creation of new passwords is disabled.
+      // Otherwise update the password - always do this even if the creation of
+      // new passwords is disabled.
       else {
         db_update('aes_passwords')
           ->fields(array('pass' => $password))
@@ -505,50 +573,80 @@ function aes_user_alter(&$edit, $account) {
   }
 }
 
-function aes_view_password_form($form_state, $password) {
-
-  $form['password'] = array(
-    '#type' => 'fieldset',
-    '#title' => t("Show password"),
-    '#description' => $password['build_info']['args'][0],
-    '#collapsible' => TRUE,
-    '#collapsed' => TRUE,
-  );
-
-  return $form;
-}
-
+/**
+ * Checks if a users password exists.
+ * @code
+ * // Implements hook_user_view().
+ * function mymodule_user_view($account, $view_mode, $langcode) {
+ *   if (aes_password_exists($account->uid)) {
+ *     // Your custom code.
+ *   }
+ * }
+ * @endcode
+ *
+ * @param int $uid
+ *   The user ID.
+ *
+ * @see aes_user_view()
+ *
+ * @return bool
+ *   TRUE if encrypted password is exists and decryptable, FALSE otherwise.
+ */
 function aes_password_exists($uid) {
-  $result = db_query("SELECT uid FROM {aes_passwords} WHERE uid = :uid", array(':uid' => $uid));
-  $user = $result->fetchAssoc();
-
-  if (!empty($user)) {
-    return TRUE;
-  }
-  else {
-    return FALSE;
-  }
+  return aes_get_password($uid) ? TRUE : FALSE;
 }
 
+/**
+ * Gets a users password, in plain text, or in it's encrypted form.
+ * @code
+ * // Implements hook_user_view().
+ * function mymodule_user_view($account, $view_mode, $langcode) {
+ *   if (aes_password_exists($account->uid)) {
+ *     $password = aes_get_password($uid, TRUE);
+ *     $account->content['info']['aes_password'] = array(
+ *       '#type' => 'user_profile_item',
+ *       '#title' => t('User password'),
+ *       '#markup' => '<div id="aes_password">' . $password . '</div>',
+ *     );
+ *   }
+ * }
+ * @endcode
+ *
+ * @param int $uid
+ *   The user ID.
+ * @param bool $decrypt
+ *   (optional) Whether to decrypt the password before returning it, or not.
+ *   Defaults to FALSE.
+ * @see aes_ajax_callback()
+ *
+ * @return bool|string
+ *   The password in plain text on success, FALSE otherwise.
+ */
 function aes_get_password($uid, $decrypt = FALSE) {
-  $result = db_query("SELECT pass FROM {aes_passwords} WHERE uid = :uid", array(':uid' => $uid));
-  $user = $result->fetchAssoc();
+  $password = db_select('aes_passwords', 'p')
+    ->fields('p', array('pass'))
+    ->condition('uid', $uid)
+    ->execute()
+    ->fetchField();
 
-  if (empty($user)) {
+  if (empty($password)) {
     return FALSE;
   }
-  else {
-    if ($decrypt) {
-      return aes_decrypt($user['pass']);
-    }
-    else {
-      return $user['pass'];
-    }
+  if ($decrypt) {
+    return aes_decrypt($password);
   }
+  return $password;
 }
 
+/**
+ * Gets the current key used for the encryption system. If there's currently
+ * no key defined, this function will generate one, store it, and return it.
+ *
+ * @return string
+ *   The key.
+ */
 function aes_get_key() {
-  $storage_method = variable_get("aes_key_storage_method", "database");
+  $storage_method = variable_get("aes_key_storage_method", "Database");
 
   if ($storage_method == "Database") {
     $key = variable_get("aes_key", FALSE);
@@ -570,33 +668,44 @@ function aes_get_key() {
   return $key;
 }
 
+/**
+ * Stores the key given by writing it to the storage method currently used
+ * (database or file).
+ *
+ * @param string $key
+ *   The key.
+ *
+ * @return bool
+ *   TRUE on success, FALSE otherwise.
+ */
 function aes_store_key($key) {
   $storage_method = variable_get("aes_key_storage_method", "Database");
-
   if ($storage_method == "Database") {
     variable_set("aes_key", $key);
-  }
-  else {
-    if ($storage_method == "File") {
-      $fp = fopen(variable_get("aes_key_path", ""), "w");
-      if ($fp === FALSE) {
-        drupal_set_message(t("Couldn't write key to file " . variable_get("aes_key_path", "")), "error");
-        return FALSE;
-      }
-      $key = fwrite($fp, $key);
-      fclose($fp);
-    }
-    else {
-      drupal_set_message(t("Unknown storage method in AES module."), "error");
-      return FALSE;
-    }
+    return TRUE;
   }
 
+  if ($storage_method != "File") {
+    throw new Exception('Unknown storage method in AES module: ' . $storage_method);
+  }
+
+  $fp = fopen(variable_get("aes_key_path", ""), "w");
+  if ($fp === FALSE) {
+    drupal_set_message(t("Couldn't write key to file " . variable_get("aes_key_path", "")), "error");
+    return FALSE;
+  }
+  fwrite($fp, $key);
+  fclose($fp);
   return TRUE;
 }
 
+/**
+ * Deletes the encryption system key.
+ *
+ * @param string $storage_method
+ *   The storage method used to store the key. "Database" or "File".
+ */
 function aes_delete_key($storage_method) {
-
   if ($storage_method == "Database") {
     variable_del("aes_key");
   }
@@ -608,49 +717,46 @@ function aes_delete_key($storage_method) {
   }
 }
 
+/**
+ * Generate a random key, containing uppercase, lowercase and digits.
+ *
+ * @return string
+ *   Encryption key.
+ */
 function aes_make_key() {
+  $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
 
-  $acceptable = FALSE;
-
-  $chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
-
-  while ($acceptable === FALSE) {
-
-    $key = "";
-
+  while (TRUE) {
+    $key = '';
     while (strlen($key) < 32) {
       $key .= substr($chars, rand(0, strlen($chars)), 1);
     }
 
-    $acceptable = TRUE;
-
     // is there at least one lowercase letter?
-    $result = preg_match("/.*[a-z].*/", $key);
-
-    if ($result == 0) {
-      $acceptable = FALSE;
+    if (!preg_match('/.*[a-z].*/', $key)) {
+      continue;
     }
-
     // is there at least one uppercase letter?
-    $result = preg_match("/.*[A-Z].*/", $key);
-
-    if ($result == 0) {
-      $acceptable = FALSE;
+    if (!preg_match('/.*[A-Z].*/', $key)) {
+      continue;
     }
-
     // is there at least one numeric?
-    $result = preg_match("/.*[0-9].*/", $key);
-
-    if ($result == 0) {
-      $acceptable = FALSE;
+    if (!preg_match('/.*[0-9].*/', $key)) {
+      continue;
     }
+    break;
   }
 
   return $key;
 }
 
+/**
+ * Define or set aes_encryption_iv variable.
+ *
+ * @param bool $ignore_implementation
+ *   Set FALSE to protect calling function if using phpseclib, TRUE otherwise.
+ */
 function aes_make_iv($ignore_implementation = FALSE) {
-
   // Bail out if using phpseclib
   if (variable_get("aes_implementation", "mcrypt") == "phpseclib" && $ignore_implementation == FALSE) {
     watchdog("aes", "Called aes_make_iv when using phpseclib. This is harmless, but shouldn't happen.", array(), WATCHDOG_WARNING);
@@ -664,7 +770,7 @@ function aes_make_iv($ignore_implementation = FALSE) {
     $randgen = MCRYPT_DEV_URANDOM;
   }
 
-  $td = mcrypt_module_open(variable_get("aes_cipher", "rijndael-128"), "", MCRYPT_MODE_CBC, "");
+  $td = mcrypt_module_open_safe(variable_get("aes_cipher", "rijndael-128"), "", MCRYPT_MODE_CBC, "");
   $iv = mcrypt_create_iv(mcrypt_enc_get_iv_size($td), $randgen);
   mcrypt_module_close($td);
   variable_set("aes_encryption_iv", base64_encode($iv));
@@ -676,18 +782,21 @@ function aes_make_iv($ignore_implementation = FALSE) {
  * @param string $string
  *   The string to encrypt.
  * @param bool $base64encode
- *   Whether to return the string base64 encoded (recommended for database insertion).
+ *   Whether to return the string base64 encoded (recommended for database
+ *   insertion).
  * @param string $custom_key
  *   Use this as the key rather than the stored one for this operation.
  * @param string $custom_cipher
- *   Use this cipher rather than the default one. (only with Mcrypt - ignored with phpseclib)
+ *   Use this cipher rather than the default one. (only with Mcrypt - ignored
+ *   with phpseclib)
  * @param string $custom_iv
  *   Use this initialization vector instead of the default one.
  * @param string $custom_implementation
- *   Can be "phpseclib" or "mcrypt". Warning: Does not check if the requested implementation actually exists.
+ *   Can be "phpseclib" or "mcrypt". Warning: Does not check if the requested
+ *   implementation actually exists.
  *
  * @return bool|string
- *   The encrypted string on success, false on error.
+ *   The encrypted string on success, FALSE on error.
  */
 function aes_encrypt($string, $base64encode = TRUE, $custom_key = NULL, $custom_cipher = NULL, $custom_iv = NULL, $custom_implementation = NULL) {
 
@@ -711,7 +820,7 @@ function aes_encrypt($string, $base64encode = TRUE, $custom_key = NULL, $custom_
     $key = aes_get_key();
   }
 
-  if (is_null($custom_implementation) == FALSE && ($custom_implementation == "mcrypt" || $custom_implementation == "phpseclib")) {
+  if ($custom_implementation == "mcrypt" || $custom_implementation == "phpseclib") {
     $implementation = $custom_implementation;
   }
   else {
@@ -738,7 +847,7 @@ function aes_encrypt($string, $base64encode = TRUE, $custom_key = NULL, $custom_
   else {
     if ($implementation == "mcrypt") {
       // Using mcrypt implementation.
-      $td = mcrypt_module_open($cipher, "", MCRYPT_MODE_CBC, "");
+      $td = mcrypt_module_open_safe($cipher, "", MCRYPT_MODE_CBC, "");
 
       if ($custom_iv == NULL) {
         $iv = base64_decode(variable_get("aes_encryption_iv", ""));
@@ -792,25 +901,27 @@ function aes_encrypt($string, $base64encode = TRUE, $custom_key = NULL, $custom_
  * @param string $custom_key
  *   Use this as the key rather than the stored one for this operation.
  * @param string $custom_cipher
- *   Use this cipher rather than the default one. (only with Mcrypt - ignored with phpseclib)
+ *   Use this cipher rather than the default one. (only with Mcrypt - ignored
+ *   with phpseclib)
  * @param string $custom_iv
  *   Use this initialization vector instead of the default one.
  * @param string $custom_implementation
- *   Can be "phpseclib" or "mcrypt". Warning: Does not check if the requested implementation actually exists.
+ *   Can be "phpseclib" or "mcrypt". Warning: Does not check if the requested
+ *   implementation actually exists.
  *
  * @return bool|string
- *   The decrypted string on success, false on error.
+ *   The decrypted string on success, FALSE on error.
  */
 function aes_decrypt($string, $base64encoded = TRUE, $custom_key = NULL, $custom_cipher = NULL, $custom_iv = NULL, $custom_implementation = NULL) {
+
+  if ($base64encoded) {
+    $string = base64_decode($string);
+  }
 
   // Bail out if the passed string is empty.
   if (empty($string)) {
     watchdog("aes", "Tried to decrypt an empty string.", array(), WATCHDOG_WARNING);
     return FALSE;
-  }
-
-  if ($base64encoded) {
-    $string = base64_decode($string);
   }
 
   if ($custom_cipher != NULL) {
@@ -827,7 +938,7 @@ function aes_decrypt($string, $base64encoded = TRUE, $custom_key = NULL, $custom
     $key = aes_get_key();
   }
 
-  if (is_null($custom_implementation) == FALSE && ($custom_implementation == "mcrypt" || $custom_implementation == "phpseclib")) {
+  if ($custom_implementation == "mcrypt" || $custom_implementation == "phpseclib") {
     $implementation = $custom_implementation;
   }
   else {
@@ -854,7 +965,7 @@ function aes_decrypt($string, $base64encoded = TRUE, $custom_key = NULL, $custom
     if ($implementation == "mcrypt") {
       // Using mcrypt implementation.
 
-      $td = mcrypt_module_open($cipher, "", MCRYPT_MODE_CBC, "");
+      $td = mcrypt_module_open_safe($cipher, "", MCRYPT_MODE_CBC, "");
       $ks = mcrypt_enc_get_key_size($td);
 
       if ($custom_iv == NULL) {
@@ -892,40 +1003,11 @@ function aes_decrypt($string, $base64encoded = TRUE, $custom_key = NULL, $custom
 }
 
 /**
- * Implements hook_enable().
+ * Safe version of mcrypt_module_open function.
  */
-function aes_enable() {
-
-  if (extension_loaded("mcrypt") === FALSE && aes_load_phpsec() === FALSE) {
-    drupal_set_message(t("The AES encryption module requires at least one of two things to function: Either the PHP Mcrypt extension has to be installed on the web server. Or the PHP Secure Communications Library (phpseclib) needs to be present in the AES directory. Installing phpseclib is probably the easiest thing to do, you can download a copy at http://phpseclib.sourceforge.net/. Extract the zip file into a directory named \"phpseclib\" inside the \"aes\" module directory and you should be good to go. Check the README.txt for more information."), "warning");
+function mcrypt_module_open_safe($algorithm, $algorithm_directory, $mode, $mode_directory) {
+  if (!function_exists('mcrypt_module_open')) {
+    throw new Exception('AES: Mcrypt is selected as encryption implementation but is unavailable.');
   }
-
-  // Choose an implementation.
-  if (extension_loaded("mcrypt") === TRUE && aes_load_phpsec() !== TRUE) {
-    variable_set("aes_implementation", "mcrypt");
-  }
-  else {
-    if (extension_loaded("mcrypt") === FALSE && aes_load_phpsec() === TRUE) {
-      variable_set("aes_implementation", "phpseclib");
-    }
-    else {
-      if (extension_loaded("mcrypt") === TRUE && aes_load_phpsec() === TRUE) {
-        variable_set("aes_implementation", "mcrypt");
-      }
-      else {
-        variable_set("aes_implementation", "missing");
-      }
-    }
-  }
-
-  if (variable_get("aes_implementation", "mcrypt") == "mcrypt") {
-    $iv = base64_decode(variable_get("aes_encryption_iv", ""));
-    if (empty($iv)) {
-      aes_make_iv();
-    }
-  }
-
-  // This will create a new key if one doesn't exist.
-  aes_get_key();
-
+  return mcrypt_module_open($algorithm, $algorithm_directory, $mode, $mode_directory);
 }

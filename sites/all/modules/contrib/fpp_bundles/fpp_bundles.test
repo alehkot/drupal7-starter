@@ -90,6 +90,7 @@ class FppBundlesTestCase extends \DrupalWebTestCase {
     $edit = array();
     $edit['name'] = $human_name;
     $edit['level'] = 0;
+    $edit['assets'] = 1;
     $edit['machine'] = preg_replace('/[^a-z0-9_]+/', '_', strtolower($human_name));
     $edit['category'] = $this->randomName(8);
 
@@ -194,5 +195,30 @@ class FppBundlesTestCase extends \DrupalWebTestCase {
     $this->drupalPost($url, array(), _fpp_bundles_get_action_title($action));
     $this->assertResponse(200, 'The request for bundle deletion has been successfully sent.');
     $this->assertText($message, $message);
+  }
+
+  /**
+   * Programmatically create/update/remove the bundle.
+   */
+  public function testCreateUpdateRemoveBundleProgrammatically() {
+    // Create a bundle.
+    $status = fpp_bundles_save(array(
+      'name' => t('New bundle'),
+      'category' => t('FPP Bundles'),
+    ));
+    $this->assertTrue($status, 'The bundle was created with help of "fpp_bundles_save" function.');
+
+    // Update the created bundle.
+    $status = fpp_bundles_save(array(
+      'bid' => 1,
+      'name' => t('New bundle name'),
+      'level' => 1,
+      'assets' => 0,
+    ));
+    $this->assertTrue($status, 'The bundle was updated with help of "fpp_bundles_save" function.');
+
+    // Remove the created bundle.
+    $status = fpp_bundles_remove(1);
+    $this->assertTrue($status, 'The bundle was removed with help of "fpp_bundles_save" function.');
   }
 }
